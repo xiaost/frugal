@@ -1,0 +1,206 @@
+package reflect
+
+import (
+	"encoding/binary"
+	"errors"
+	"reflect"
+	"unsafe"
+)
+
+func normalizeEncodeRV(rv reflect.Value) reflect.Value {
+	if rv.Kind() == reflect.Struct {
+		// fix Encode(Struct{}).
+		// convert unaddressable value to addressable
+		//	then we can go through the struct by pointer
+		// we should avoid using struct directly
+		//	since it will malloc a new tmp space for reflect.Value
+		// for performance concerns, use pointer instead. TODO: optimize this case?
+		// pseudocode:
+		//	ret := new(Type)
+		//	*ret = rv
+		//	return ret
+		ret := reflect.New(rv.Type())
+		ret.Elem().Set(rv)
+		return ret
+	}
+	for ev := rv.Elem(); ev.Kind() == reflect.Pointer; ev = ev.Elem() {
+		rv = ev // fix **struct
+	}
+	return rv
+}
+
+type Encoder struct {
+	// ...
+}
+
+// Encode encodes a struct to buf.
+// base is the pointer of the struct
+func (e *Encoder) Encode(b []byte, base unsafe.Pointer, fd *FieldDesc) (int, error) {
+	if base == nil {
+		// kitex will encode nil struct with a single byte tSTOP
+		b[0] = byte(tSTOP)
+		return 1, nil
+	}
+	i := 0
+	for _, f := range fd.fields {
+		t := &f.Type
+		p := unsafe.Pointer(uintptr(base) + f.Offset)
+		if f.CanSkipEncodeIfNil && unsafe.Pointer(*(*uintptr)(p)) == nil {
+			continue
+		}
+		if f.CanSkipIfDefault && t.Equal(f.Default, p) {
+			continue
+		}
+
+		// field header
+		b[i] = byte(t.WT)
+		binary.BigEndian.PutUint16(b[i+1:], f.ID)
+		i += fieldHeaderLen
+
+		// field value
+		if t.SimpleType { // fast path
+			if t.IsPointer {
+				p = unsafe.Pointer(*(*uintptr)(p))
+			}
+			i += encodeSimpleTypes(t.T, b[i:], p)
+		} else if t.T == tSTRUCT {
+			// tSTRUCT always is pointer?
+			n, err := e.Encode(b[i:], unsafe.Pointer(*(*uintptr)(p)), t.fd)
+			if err != nil {
+				return i, err
+			}
+			i += n
+		} else {
+			n, err := e.encodeContainerType(t, b[i:], p)
+			if err != nil {
+				return i, err
+			}
+			i += n
+		}
+	}
+	b[i] = byte(tSTOP)
+	i++
+	return i, nil
+}
+
+func (e *Encoder) encodeContainerType(t *tType, b []byte, p unsafe.Pointer) (int, error) {
+	switch t.T {
+	case tMAP:
+		kt := t.K
+		vt := t.V
+		// map header
+		b[0] = byte(kt.WT)
+		b[1] = byte(vt.WT)
+		if unsafe.Pointer(*(*uintptr)(p)) == nil {
+			b[5], b[4], b[3], b[2] = 0, 0, 0, 0
+			return mapHeaderLen, nil
+		}
+		binary.BigEndian.PutUint32(b[2:], uint32(maplen(unsafe.Pointer(*(*uintptr)(p)))))
+		i := mapHeaderLen
+		mv := reflectValueWithPointer(t.rv, p)
+		for it := mv.MapRange(); it.Next(); { // XXX: use unexported runtime mapiterxxx?
+			kp, vp := mapIterKeyValue(it)
+
+			// Key
+			// tBOOL, tBYTE, tDOUBLE, tI16, tI32, tI64 or tSTRING
+			i += encodeSimpleTypes(kt.T, b[i:], kp)
+
+			// Value
+			if vt.SimpleType { // fast path
+				i += encodeSimpleTypes(vt.T, b[i:], vp)
+			} else if vt.T == tSTRUCT {
+				// tSTRUCT always is pointer?
+				n, err := e.Encode(b[i:], unsafe.Pointer(*(*uintptr)(vp)), vt.fd)
+				if err != nil {
+					return i, err
+				}
+				i += n
+			} else { // tLIST, tSET, tMAP, unlikely...
+				n, err := e.encodeContainerType(vt, b[i:], vp)
+				if err != nil {
+					return i, err
+				}
+				i += n
+			}
+		}
+		return i, nil
+	case tLIST, tSET: // NOTE: for tSET, it may be map in the future
+		// list header
+		vt := t.V
+		b[0] = byte(vt.WT)
+		if unsafe.Pointer(*(*uintptr)(p)) == nil {
+			b[4], b[3], b[2], b[1] = 0, 0, 0, 0
+			return listHeaderLen, nil
+		}
+		h := (*reflect.StringHeader)(p) // use StringHeader, we never touch h.Cap
+		binary.BigEndian.PutUint32(b[1:], uint32(h.Len))
+		i := listHeaderLen
+		vp := unsafe.Pointer(h.Data)
+		// list elements
+		for j := 0; j < h.Len; j++ {
+			if vt.SimpleType { // fast path
+				i += encodeSimpleTypes(vt.T, b[i:], vp)
+			} else if vt.T == tSTRUCT {
+				// tSTRUCT always is pointer?
+				n, err := e.Encode(b[i:], unsafe.Pointer(*(*uintptr)(vp)), vt.fd)
+				if err != nil {
+					return i, err
+				}
+				i += n
+			} else { // tLIST, tSET, tMAP, unlikely...
+				n, err := e.encodeContainerType(vt, b[i:], vp)
+				if err != nil {
+					return i, err
+				}
+				i += n
+			}
+			vp = unsafe.Pointer(uintptr(vp) + uintptr(vt.Size)) // move to next element
+		}
+		// for tSET, check duplicated items
+		if t.T == tSET {
+			if err := checkUniqueness(t, p, h); err != nil {
+				return i, err
+			}
+		}
+		return i, nil
+	}
+	return 0, errors.New("unknown type")
+}
+
+var simpleTypes = [256]bool{
+	tBOOL:   true,
+	tBYTE:   true,
+	tDOUBLE: true,
+	tI16:    true,
+	tI32:    true,
+	tI64:    true,
+	tENUM:   true,
+	tSTRING: true,
+}
+
+// NOTE: PLEASE ADD CODE CAREFULLY
+// can inline encodeSimpleTypes with cost 78 (budget 80)
+func encodeSimpleTypes(t ttype, b []byte, p unsafe.Pointer) int {
+	switch t {
+	case tBYTE, tBOOL:
+		b[0] = *((*byte)(p)) // for tBOOL, true -> 1, false -> 0
+		return 1
+	case tI16:
+		binary.BigEndian.PutUint16(b, uint16(*((*int16)(p))))
+		return 2
+	case tI32:
+		binary.BigEndian.PutUint32(b, uint32(*((*int32)(p))))
+		return 4
+	case tENUM:
+		binary.BigEndian.PutUint32(b, uint32(*((*int64)(p))))
+		return 4
+	case tI64, tDOUBLE:
+		binary.BigEndian.PutUint64(b, *((*uint64)(p)))
+		return 8
+	case tSTRING:
+		x := *((*string)(p))
+		binary.BigEndian.PutUint32(b, uint32(len(x)))
+		return 4 + copy(b[4:], x)
+	}
+	panic("bug")
+}
