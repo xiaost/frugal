@@ -69,3 +69,12 @@ func BenchmarkDecode(b *testing.B) {
 		Decode(buf, p)
 	}
 }
+
+func BenchmarkGenEncode(b *testing.B) {
+	p := initTestTypesForBenchmark()
+	buf := make([]byte, EncodedSize(p))
+	b.SetBytes(int64(len(buf)))
+	for i := 0; i < b.N; i++ {
+		p.Encode(buf)
+	}
+}
