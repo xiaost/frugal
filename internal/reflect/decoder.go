@@ -181,12 +181,12 @@ func decodeStringNoCopy(t *tType, b []byte, p unsafe.Pointer) (i int, err error)
 
 	if t.Tag == defs.T_binary {
 		h := (*sliceHeader)(p)
-		h.Data = uintptr(unsafe.Pointer(&b[i]))
+		h.Data = unsafe.Pointer(&b[i])
 		h.Len = l
 		h.Cap = l
 	} else { //  convert to str
 		h := (*stringHeader)(p)
-		h.Data = uintptr(unsafe.Pointer(&b[i]))
+		h.Data = unsafe.Pointer(&b[i])
 		h.Len = l
 	}
 	i += l
@@ -222,12 +222,12 @@ func (d *tDecoder) decodeType(t *tType, b []byte, p unsafe.Pointer, maxdepth int
 		x := d.Malloc(l, 1, 0)
 		if t.Tag == defs.T_binary {
 			h := (*sliceHeader)(p)
-			h.Data = uintptr(x)
+			h.Data = x
 			h.Len = l
 			h.Cap = l
 		} else { //  convert to str
 			h := (*stringHeader)(p)
-			h.Data = uintptr(x)
+			h.Data = x
 			h.Len = l
 		}
 		copyn(x, b[i:], l)
@@ -338,7 +338,7 @@ func (d *tDecoder) decodeType(t *tType, b []byte, p unsafe.Pointer, maxdepth int
 			return i, nil
 		}
 		x := d.Malloc(l*et.Size, et.Align, et.MallocAbiType) // malloc for slice. make([]Type, l, l)
-		h.Data = uintptr(x)
+		h.Data = x
 		h.Len = l
 		h.Cap = l
 

@@ -45,7 +45,7 @@ func appendList_I08(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		b = append(b, *((*byte)(vp)))
+		b = append(b, *(*byte)(vp))
 	}
 	return b, nil
 }
@@ -60,7 +60,7 @@ func appendList_I16(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		b = appendUint16(b, *((*uint16)(vp)))
+		b = appendUint16(b, *(*uint16)(vp))
 	}
 	return b, nil
 }
@@ -75,7 +75,7 @@ func appendList_I32(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		b = appendUint32(b, *((*uint32)(vp)))
+		b = appendUint32(b, *(*uint32)(vp))
 	}
 	return b, nil
 }
@@ -90,7 +90,7 @@ func appendList_I64(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		b = appendUint64(b, *((*uint64)(vp)))
+		b = appendUint64(b, *(*uint64)(vp))
 	}
 	return b, nil
 }
@@ -105,7 +105,7 @@ func appendList_ENUM(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		b = appendUint32(b, uint32(*((*int64)(vp))))
+		b = appendUint32(b, uint32(*(*uint64)(vp)))
 	}
 	return b, nil
 }
@@ -116,12 +116,11 @@ func appendList_STRING(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	if n == 0 {
 		return b, nil
 	}
-	var s string
 	for i := uint32(0); i < n; i++ {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
-		s = *((*string)(vp))
+		s := *(*string)(vp)
 		b = appendUint32(b, uint32(len(s)))
 		b = append(b, s...)
 	}
@@ -134,11 +133,11 @@ func appendList_Other(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	if n == 0 {
 		return b, nil
 	}
-	var err error
 	for i := uint32(0); i < n; i++ {
 		if i != 0 {
 			vp = unsafe.Add(vp, t.Size)
 		}
+		var err error
 		if t.IsPointer {
 			b, err = t.AppendFunc(t, b, *(*unsafe.Pointer)(vp))
 		} else {

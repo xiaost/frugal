@@ -206,10 +206,50 @@ func TestGenAppendMapCode(t *testing.T) {
 func genAppendMapCode(t *testing.T, filename string) {
 	f := &bytes.Buffer{}
 	f.WriteString(appendMapGenFileHeader)
+	fm := func(format string, args ...any) {
+		fmt.Fprintf(f, format, args...)
+		fmt.Fprintln(f)
+	}
+
+	var appendCode = map[ttype]func(t, p string){
+		tBYTE:   func(t, p string) { fm("b = append(b, *(*byte)(%s))", p) },
+		tI16:    func(t, p string) { fm("b = appendUint16(b, *(*uint16)(%s))", p) },
+		tI32:    func(t, p string) { fm("b = appendUint32(b, *(*uint32)(%s))", p) },
+		tI64:    func(t, p string) { fm("b = appendUint64(b, *(*uint64)(%s))", p) },
+		tDOUBLE: func(t, p string) { fm("b = appendUint64(b, *(*uint64)(%s))", p) },
+		tENUM:   func(t, p string) { fm("b = appendUint32(b, uint32(*(*int64)(%s)))", p) },
+		tSTRING: func(t, p string) {
+			fm("s = *(*string)(%s)", p)
+			fm("b = appendUint32(b, uint32(len(s))); b = append(b, s...)")
+		},
+		tOTHER: func(t, p string) {
+			fm("if %s.IsPointer { b, err = %s.AppendFunc(%s, b, *(*unsafe.Pointer)(%s))", t, t, t, p)
+			fm("} else {")
+			fm("b, err = %s.AppendFunc(%s, b, %s)", t, t, p)
+			fm("}")
+			fm("if err != nil { return b, err }")
+		},
+	}
+
+	var appendScalarCode = map[ttype]func(p string){
+		tBYTE:   func(p string) { fm("b = append(b, %s)", p) },
+		tI16:    func(p string) { fm("b = appendUint16(b, %s)", p) },
+		tI32:    func(p string) { fm("b = appendUint32(b, %s)", p) },
+		tI64:    func(p string) { fm("b = appendUint64(b, %s)", p) },
+		tDOUBLE: func(p string) { fm("b = appendUint64(b, %s)", p) },
+		tENUM:   func(p string) { fm("b = appendUint32(b, uint32(%s))", p) },
+		tSTRING: func(p string) {
+			fm("b = appendUint32(b, uint32(len(%s))); b = append(b, %s...)", p, p)
+		},
+	}
 
 	// func init
-	fmt.Fprintln(f, "func init() {")
-	supportTypes := []ttype{
+	fm("func init() {")
+	supportedKeyTypes := []ttype{
+		tBYTE, tI16, tI32, tI64, tDOUBLE,
+		tENUM, tSTRING,
+	}
+	supportedValueTypes := []ttype{
 		tBYTE, tI16, tI32, tI64, tDOUBLE,
 		tENUM, tSTRING, tSTRUCT, tMAP, tSET, tLIST,
 	}
@@ -218,38 +258,52 @@ func genAppendMapCode(t *testing.T, filename string) {
 		tENUM: "tENUM", tSTRING: "tSTRING",
 		tSTRUCT: "tSTRUCT", tMAP: "tMAP", tSET: "tSET", tLIST: "tLIST",
 	}
-	for _, k := range supportTypes {
-		for _, v := range supportTypes {
+	t2go := map[ttype]string{
+		tBYTE: "byte", tI16: "uint16", tI32: "uint32", tI64: "uint64", tDOUBLE: "uint64",
+		tENUM: "int64", tSTRING: "string",
+	}
+	for _, k := range supportedKeyTypes {
+		for _, v := range supportedValueTypes {
 			fmt.Fprintf(f, "registerMapAppendFunc(%s, %s, %s)\n",
 				t2var[k], t2var[v], appendMapFuncName(k, v))
 		}
 	}
-	fmt.Fprintln(f, "}")
-	fmt.Fprintln(f, "")
+	fm("}")
 
-	// func appendMapXXX
-	for _, k := range []ttype{tBYTE, tI16, tI32, tI64, tENUM, tSTRING, tOTHER} {
-		for _, v := range []ttype{tBYTE, tI16, tI32, tI64, tENUM, tSTRING, tOTHER} {
-			fmt.Fprintf(f, "func %s(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {\n",
-				appendMapFuncName(k, v))
-			fmt.Fprintln(f, "b, n := appendMapHeader(t, b, p)")
-			fmt.Fprintln(f, "if n == 0 { return b, nil }")
-			if defineErr[k] || defineErr[v] {
-				fmt.Fprintln(f, "var err error")
+	// func appendMapXXX for scalar types
+	for _, k := range []ttype{tBYTE, tI16, tI32, tI64, tENUM, tSTRING} {
+		for _, v := range []ttype{tBYTE, tI16, tI32, tI64, tENUM, tSTRING} {
+			fm("\nfunc %s(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {", appendMapFuncName(k, v))
+			fm("b, n := appendMapHeader(t, b, p)")
+			fm("if n == 0 { return b, nil }")
+			fm("for k, v := range *(*map[%s]%s)(p) {", t2go[k], t2go[v])
+			{
+				fm("n--")
+				appendScalarCode[k]("k")
+				appendScalarCode[v]("v")
 			}
-			if defineStr[k] || defineStr[v] {
-				fmt.Fprintln(f, "var s string")
-			}
-			fmt.Fprintln(f, "it := newMapIter(rvWithPtr(t.RV, p))")
-			fmt.Fprintln(f, "for kp, vp := it.Next(); kp != nil;kp, vp = it.Next() {")
-			fmt.Fprintln(f, "n--")
-			fmt.Fprintln(f, getAppendCode(k, "t.K", "kp"))
-			fmt.Fprintln(f, getAppendCode(v, "t.V", "vp"))
-			fmt.Fprintln(f, "}")
-			fmt.Fprintln(f, "return b, checkMapN(n)")
-			fmt.Fprintln(f, "}")
-			fmt.Fprintln(f, "")
+			fm("}")
+			fm("return b, checkMapN(n)")
+			fm("}")
 		}
+
+		// tOTHER
+		v := tOTHER
+		fm("\nfunc %s(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {", appendMapFuncName(k, v))
+		fm("b, n := appendMapHeader(t, b, p)")
+		fm("if n == 0 { return b, nil }")
+		fm("var err error")
+		if k == tSTRING {
+			fm("var s string")
+		}
+		fm("it := newMapIter(rvWithPtr(t.RV, p))")
+		fm("for kp, vp := it.Next(); kp != nil;kp, vp = it.Next() {")
+		fm("n--")
+		appendCode[k]("t.K", "kp")
+		appendCode[v]("t.V", "vp")
+		fm("}")
+		fm("return b, checkMapN(n)")
+		fm("}")
 	}
 
 	fileb, err := format.Source(f.Bytes())

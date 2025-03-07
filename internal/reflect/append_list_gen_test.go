@@ -56,13 +56,13 @@ func TestGenAppendListCode(t *testing.T) {
 	var err error
 
 	p0 = &TestStruct{
-		L1: []int8{11, 12},
+		L1: []int8{11, 12, 13},
 		L2: []int16{21, 22},
-		L3: []int32{31, 32},
+		L3: []int32{31, 32, 33},
 		L4: []int64{41, 42},
-		L5: []EnumType{51, 52},
+		L5: []EnumType{51, 52, 53},
 		L6: []string{"61", "62"},
-		L7: []*Msg{{X: 71, Y: 72}, {X: 73, Y: 74}},
+		L7: []*Msg{{X: 71, Y: 72}, {X: 73, Y: 74}, {X: 0, Y: 0}},
 	}
 	b, err = Append(nil, p0)
 	require.NoError(t, err)
@@ -93,15 +93,43 @@ func TestGenAppendListCode(t *testing.T) {
 }
 
 func genAppendListCode(t *testing.T, filename string) {
-
-	defineErr := map[ttype]bool{tOTHER: true}
-	defineStr := map[ttype]bool{tSTRING: true}
-
 	f := &bytes.Buffer{}
 	f.WriteString(appendListGenFileHeader)
+	fm := func(format string, args ...any) {
+		fmt.Fprintf(f, format, args...)
+		fmt.Fprintln(f)
+	}
+
+	var listAppendElementCode = map[ttype]func(){
+		tBYTE:   func() { fm("b = append(b, *(*byte)(vp))") },
+		tI16:    func() { fm("b = appendUint16(b, *(*uint16)(vp))") },
+		tI32:    func() { fm("b = appendUint32(b, *(*uint32)(vp))") },
+		tI64:    func() { fm("b = appendUint64(b, *(*uint64)(vp))") },
+		tDOUBLE: func() { fm("b = appendUint64(b, *(*uint64)(vp))") },
+		tENUM:   func() { fm("b = appendUint32(b, uint32(*(*uint64)(vp)))") },
+		tSTRING: func() {
+			fm("s := *(*string)(vp)")
+			fm("b = appendUint32(b, uint32(len(s)))")
+			fm("b = append(b, s...)")
+		},
+		// tSTRUCT, tMAP, tSET, tLIST -> tOTHER
+		tOTHER: func() {
+			fm("var err error")
+			fm("if t.IsPointer {")
+			{
+				fm("b, err = t.AppendFunc(t, b, *(*unsafe.Pointer)(vp))")
+			}
+			fm("} else {")
+			{
+				fm("b, err = t.AppendFunc(t, b, vp)")
+			}
+			fm("}")
+			fm("if err != nil { return b, err }")
+		},
+	}
 
 	// func init
-	fmt.Fprintln(f, "func init() {")
+	fm("func init() {")
 	supportTypes := []ttype{
 		tBYTE, tI16, tI32, tI64, tDOUBLE,
 		tENUM, tSTRING, tSTRUCT, tMAP, tSET, tLIST,
@@ -112,31 +140,26 @@ func genAppendListCode(t *testing.T, filename string) {
 		tSTRUCT: "tSTRUCT", tMAP: "tMAP", tSET: "tSET", tLIST: "tLIST",
 	}
 	for _, v := range supportTypes {
-		fmt.Fprintf(f, "registerListAppendFunc(%s, %s)\n",
-			t2var[v], appendListFuncName(v))
+		fm("registerListAppendFunc(%s, %s)", t2var[v], appendListFuncName(v))
 	}
-	fmt.Fprintln(f, "}")
-	fmt.Fprintln(f, "")
+	fm("}")
 
 	// func appendList_XXX
 	for _, v := range []ttype{tBYTE, tI16, tI32, tI64, tENUM, tSTRING, tOTHER} {
-		fmt.Fprintf(f, "func %s(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {\n",
+		fm("\nfunc %s(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {",
 			appendListFuncName(v))
-		fmt.Fprintln(f, "t = t.V")
-		fmt.Fprintln(f, "b, n, vp := appendListHeader(t, b, p)")
+		fm("t = t.V")
+		fm("b, n, vp := appendListHeader(t, b, p)")
 		fmt.Fprintln(f, "if n == 0 { return b, nil }")
-		if defineErr[v] {
-			fmt.Fprintln(f, "var err error")
-		} else if defineStr[v] {
-			fmt.Fprintln(f, "var s string")
+
+		fm("for i := uint32(0); i < n; i++ {")
+		{
+			fm("if i != 0 { vp = unsafe.Add(vp, t.Size) }")
+			listAppendElementCode[v]()
 		}
-		fmt.Fprintln(f, "for i := uint32(0); i < n; i++ {")
-		fmt.Fprintln(f, "if i != 0 { vp = unsafe.Add(vp, t.Size) }")
-		fmt.Fprintln(f, getAppendCode(v, "t", "vp"))
-		fmt.Fprintln(f, "}")
-		fmt.Fprintln(f, "return b, nil")
-		fmt.Fprintln(f, "}")
-		fmt.Fprintln(f, "")
+		fm("}")
+		fm("return b, nil")
+		fm("}")
 	}
 
 	fileb, err := format.Source(f.Bytes())
