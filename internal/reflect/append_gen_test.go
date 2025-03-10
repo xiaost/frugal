@@ -27,22 +27,6 @@ var (
 	gencode = flag.Bool("gencode", false, "generate list/map code for better performance")
 )
 
-var tOTHER = ttype(0xee) // must not in use, only for generating code
-
-func init() {
-	t2s[tOTHER] = "Other" // makes ttype2str work
-}
-
-func ttype2FuncType(t ttype) string {
-	switch t {
-	case tSTRUCT, tMAP, tSET, tLIST:
-		t = tOTHER
-	case tDOUBLE:
-		t = tI64
-	}
-	return ttype2str(t)
-}
-
 func codeWithLine(b []byte) string {
 	p := &strings.Builder{}
 	p.Grow(len(b) + 5*bytes.Count(b, []byte("\n")))

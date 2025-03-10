@@ -253,11 +253,6 @@ func genAppendMapCode(t *testing.T, filename string) {
 		tBYTE, tI16, tI32, tI64, tDOUBLE,
 		tENUM, tSTRING, tSTRUCT, tMAP, tSET, tLIST,
 	}
-	t2var := map[ttype]string{
-		tBYTE: "tBYTE", tI16: "tI16", tI32: "tI32", tI64: "tI64", tDOUBLE: "tDOUBLE",
-		tENUM: "tENUM", tSTRING: "tSTRING",
-		tSTRUCT: "tSTRUCT", tMAP: "tMAP", tSET: "tSET", tLIST: "tLIST",
-	}
 	t2go := map[ttype]string{
 		tBYTE: "byte", tI16: "uint16", tI32: "uint32", tI64: "uint64", tDOUBLE: "uint64",
 		tENUM: "int64", tSTRING: "string",
@@ -265,7 +260,7 @@ func genAppendMapCode(t *testing.T, filename string) {
 	for _, k := range supportedKeyTypes {
 		for _, v := range supportedValueTypes {
 			fmt.Fprintf(f, "registerMapAppendFunc(%s, %s, %s)\n",
-				t2var[k], t2var[v], appendMapFuncName(k, v))
+				t2s[k], t2s[v], appendMapFuncName(k, v))
 		}
 	}
 	fm("}")
@@ -319,7 +314,16 @@ func genAppendMapCode(t *testing.T, filename string) {
 }
 
 func appendMapFuncName(k, v ttype) string {
-	return fmt.Sprintf("appendMap_%s_%s", ttype2FuncType(k), ttype2FuncType(v))
+	t2name := func(t ttype) string {
+		switch t {
+		case tSTRUCT, tMAP, tSET, tLIST:
+			t = tOTHER
+		case tDOUBLE:
+			t = tI64
+		}
+		return ttype2str(t)
+	}
+	return fmt.Sprintf("appendMap_%s_%s", t2name(k), t2name(v))
 }
 
 const appendMapGenFileHeader = `/*

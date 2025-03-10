@@ -22,20 +22,20 @@ import "unsafe"
 // Template and code can be found in append_list_gen_test.go.
 
 func init() {
-	registerListAppendFunc(tBYTE, appendList_I08)
-	registerListAppendFunc(tI16, appendList_I16)
-	registerListAppendFunc(tI32, appendList_I32)
-	registerListAppendFunc(tI64, appendList_I64)
-	registerListAppendFunc(tDOUBLE, appendList_I64)
-	registerListAppendFunc(tENUM, appendList_ENUM)
-	registerListAppendFunc(tSTRING, appendList_STRING)
-	registerListAppendFunc(tSTRUCT, appendList_Other)
-	registerListAppendFunc(tMAP, appendList_Other)
-	registerListAppendFunc(tSET, appendList_Other)
-	registerListAppendFunc(tLIST, appendList_Other)
+	registerListAppendFunc(tI08, appendList_tI08)
+	registerListAppendFunc(tI16, appendList_tI16)
+	registerListAppendFunc(tI32, appendList_tI32)
+	registerListAppendFunc(tI64, appendList_tI64)
+	registerListAppendFunc(tDOUBLE, appendList_tI64)
+	registerListAppendFunc(tENUM, appendList_tENUM)
+	registerListAppendFunc(tSTRING, appendList_tSTRING)
+	registerListAppendFunc(tSTRUCT, appendList_tOTHER)
+	registerListAppendFunc(tMAP, appendList_tOTHER)
+	registerListAppendFunc(tSET, appendList_tOTHER)
+	registerListAppendFunc(tLIST, appendList_tOTHER)
 }
 
-func appendList_I08(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tI08(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -50,7 +50,7 @@ func appendList_I08(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_I16(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tI16(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -65,7 +65,7 @@ func appendList_I16(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_I32(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tI32(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -80,7 +80,7 @@ func appendList_I32(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_I64(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tI64(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -95,7 +95,7 @@ func appendList_I64(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_ENUM(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tENUM(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -110,7 +110,7 @@ func appendList_ENUM(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_STRING(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tSTRING(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
@@ -127,7 +127,7 @@ func appendList_STRING(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	return b, nil
 }
 
-func appendList_Other(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
+func appendList_tOTHER(t *tType, b []byte, p unsafe.Pointer) ([]byte, error) {
 	t = t.V
 	b, n, vp := appendListHeader(t, b, p)
 	if n == 0 {
