@@ -17,6 +17,7 @@
 package reflect
 
 import (
+	"encoding/binary"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -233,4 +234,33 @@ func appendUint64(b []byte, v uint64) []byte {
 		byte(v>>8),
 		byte(v),
 	)
+}
+
+// same as math.Float64frombits(binary.BigEndian.Uint64(b))
+func decodeDouble(b []byte) (v float64) {
+	_ = b[7]
+	*(*uint64)(unsafe.Pointer(&v)) = uint64(b[7]) | uint64(b[6])<<8 |
+		uint64(b[5])<<16 | uint64(b[4])<<24 |
+		uint64(b[3])<<32 | uint64(b[2])<<40 |
+		uint64(b[1])<<48 | uint64(b[0])<<56
+	return
+}
+
+// shortcut of int16(binary.BigEndian.Uint16(b))
+func decodeInt16(b []byte) int16 {
+	_ = b[1]
+	return int64(uint16(b[1]) | uint16(b[0])<<8)
+}
+
+// shortcut of int32(binary.BigEndian.Uint32(b))
+func decodeInt32(b []byte) int32 {
+	_ = b[3]
+	return int32(uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24)
+}
+
+// shortcut of int64(binary.BigEndian.Uint64(b))
+func decodeInt64(b []byte) int64 {
+	_ = b[7]
+	return int64(uint64(b[7]) | uint64(b[6])<<8 | uint64(b[5])<<16 | uint64(b[4])<<24 |
+		uint64(b[3])<<32 | uint64(b[2])<<40 | uint64(b[1])<<48 | uint64(b[0])<<56)
 }

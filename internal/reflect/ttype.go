@@ -86,6 +86,8 @@ var simpleTypes = [256]bool{
 
 type appendFuncType func(t *tType, b []byte, p unsafe.Pointer) ([]byte, error)
 
+type decodeFuncType func(d *tDecoder, t *tType, b []byte, p unsafe.Pointer, maxdepth int) (int, error)
+
 type tType struct {
 	T ttype
 	K *tType
@@ -116,6 +118,7 @@ type tType struct {
 	// for tLIST, tSET, tMAP, tSTRUCT
 	EncodedSizeFunc func(p unsafe.Pointer) (int, error)
 	AppendFunc      appendFuncType
+	DecodeFunc      decodeFuncType
 
 	// tMAP only
 	MapTmpVarsPool *sync.Pool // for decoder tmp vars
@@ -183,20 +186,31 @@ func newTType(x *defs.Type) *tType {
 	t.IsPointer = t.Tag == defs.T_pointer
 	t.SimpleType = simpleTypes[t.T]
 	t.FixedSize = int(typeToSize[t.T])
-	switch t.T {
-	case tMAP:
-		t.EncodedSizeFunc = t.encodedMapSize
-	case tLIST, tSET:
-		t.EncodedSizeFunc = t.encodedListSize
-	case tSTRUCT:
-		t.EncodedSizeFunc = t.EncodedSize
-	}
+
 	if x.K != nil {
 		t.K = newTType(x.K)
 	}
 	if x.V != nil {
 		t.V = newTType(x.V)
 	}
+
+	switch t.T {
+	case tSTRING:
+		t.DecodeFunc = decoderString
+
+	case tMAP:
+		t.EncodedSizeFunc = t.encodedMapSize
+		t.DecodeFunc = decodeMapAny
+
+	case tLIST, tSET:
+		t.EncodedSizeFunc = t.encodedListSize
+		t.DecodeFunc = decodeListAny
+
+	case tSTRUCT:
+		t.EncodedSizeFunc = t.EncodedSize
+		t.DecodeFunc = decodeStruct
+	}
+
 	switch t.T {
 	case tLIST, tSET:
 		updateListAppendFunc(t)
